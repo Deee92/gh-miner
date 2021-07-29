@@ -1,7 +1,5 @@
 # Find Java + Maven projects on GitHub
 
-# curl -H "Accept: application/vnd.github.v3+json Authorization: token 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" "https://api.github.com/search/repositories?q=language:java+NOT+android+in:description,readme&per_page=2&page=1&sort:stars"
-
 import calendar
 import json
 import os
