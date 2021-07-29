@@ -1,6 +1,7 @@
 # Find Java projects built with Maven
 
 # curl -H "Accept: application/vnd.github.v3+json Authorization: token <PAT>" "https://api.github.com/search/repositories?q=language:java+NOT+android+in:description,readme&per_page=2&page=1&sort:stars"
+# curl -H "Accept: application/vnd.github.v3+json Authorization: token <PAT>" "https://api.github.com/search/code?q=filename:pom+extension:xml+repo:full/name&per_page=1&page=1"
 
 import calendar
 import json
@@ -33,12 +34,11 @@ def create_query_result_output_files():
   create_file(query_results_file)
   create_file(output_file)
 
-# Get a list of repos using the GitHub search API
+# Get a list of repos with the search/repositories API
 def get_repos():
-  response_type = "application/vnd.github.v3+json"
-
   all_search_items = {}
   all_search_items["items"] = []
+  global number_of_repos
 
   for i in range(1, 11):
     params = {
@@ -48,8 +48,8 @@ def get_repos():
       'page': i
     }
     headers = {
-    'Authorization': get_auth_token(),
-    'Accept': response_type
+      'Authorization': auth_token,
+      'Accept': response_type
     }
     print(params)
     response = requests.get('https://api.github.com/search/repositories', params=params, headers=headers)
@@ -60,7 +60,8 @@ def get_repos():
     data_from_page = response.json()
     for i in range(len(data_from_page["items"])):
       all_search_items["items"].append(data_from_page["items"][i])
-  print("=== Saving a list of", len(all_search_items["items"]), "repos in", query_results_file)
+    number_of_repos = len(all_search_items["items"])
+  print("=== Saving a list of", number_of_repos, "repos in", query_results_file)
   
   with open(query_results_file, 'w') as json_file:
     json.dump(all_search_items, json_file, indent=2)
@@ -77,30 +78,9 @@ def extract_proprietary_info(single_repo_data):
     "stargazers_count": single_repo_data["stargazers_count"],
     "language": single_repo_data["language"],
     "default_branch": single_repo_data["default_branch"],
-    "size": single_repo_data["size"],
-    "candidate": False
+    "size": single_repo_data["size"]
   }
   return single_repo
-
-# Clone a repo
-def clone_repo(repo_clone_url):
-  clone_cmd = "git clone " + repo_clone_url
-  print(clone_cmd)
-  os.system(clone_cmd)
-
-# Find the build tools used by project 
-def find_build_tools():
-  find_ant_cmd = "find . -name \"build.xml\" | wc -l"
-  find_maven_cmd = "find . -name \"pom.xml\" | wc -l"
-  find_gradle_cmd = "find . -name \"build.gradle\" | wc -l"
-  build_tools = []
-  if int(os.popen(find_ant_cmd).read().strip()) > 0:
-    build_tools.append("Ant")
-  if int(os.popen(find_maven_cmd).read().strip()) > 0:
-    build_tools.append("Maven")
-  if int(os.popen(find_gradle_cmd).read().strip()) > 0:
-    build_tools.append("Gradle")
-  return build_tools
 
 # Find the age of the project
 def find_repo_age(created_at, updated_at):
@@ -109,40 +89,59 @@ def find_repo_age(created_at, updated_at):
   age = (date_updated_at - date_created_at).days
   return age
 
+# Find pom.xml files with the search/code API
+def find_pom_xml(full_name):
+  params = {
+    'q': 'filename:pom extension:xml repo:' + full_name,
+    'per_page': 1,
+    'page': 1
+  }
+  headers = {
+    'Authorization': auth_token,
+    'Accept': response_type
+  }
+  print(params)
+  response = requests.get('https://api.github.com/search/code', params=params, headers=headers)
+  print("URL", response.request.url)
+  print("Headers", response.request.headers)
+  response_data = response.json()
+  # print(response_data)
+  print("Total count:", response_data["total_count"])
+  return (response_data["total_count"] > 0)
+
 # Find a subset of Maven projects
 def get_maven_projects():
   parent_dir = os.getcwd()
   output = []
   with open(query_results_file, 'r') as json_file:
     repo_data = json.load(json_file)
-  print("=== Extracting data...")
+  print("=== Extracting data after a minute-long nap...")
+  time.sleep(60)
   for i in range(len(repo_data["items"])):
     single_repo = extract_proprietary_info(repo_data["items"][i])
-    # Clone the repo
-    clone_repo(single_repo["clone_url"])
-    # cd into project
-    os.chdir(parent_dir + "/" + single_repo["name"])
-    # Find build tools
-    build_tools = find_build_tools()
-    if len(build_tools) > 0 and "Maven" in build_tools:
-      single_repo["candidate"] = True
-      single_repo["build_tools"] = build_tools
-      # Find repo age in days
+    if ((i + 1) % 30) == 0:
+      print("=== Rate limit of 30 requests per minute reached. Resetting...")
+      time.sleep(60)
+    print("=== Finding POM files in", single_repo["full_name"], "- repo", (i + 1), "of", number_of_repos)
+    if (find_pom_xml(single_repo["full_name"]) == True):
+      print("=== Found at least one POM in", single_repo["full_name"])
       single_repo["age_days"] = find_repo_age(repo_data["items"][i]["created_at"], repo_data["items"][i]["updated_at"])
-    # cd to parent directory
-    os.chdir(parent_dir)
-    # Remove repo directory
-    rm_repo_dir_cmd = "rm -rf " + single_repo["name"]
-    os.system(rm_repo_dir_cmd)
-    if single_repo["candidate"] == True:
+      single_repo["has_pom"] = True
       output.append(single_repo)
+    else:
+      print("=== Did not find POM in", single_repo["full_name"])
+    print("=================================")
 
   # Save final outputs to file
-  print("Saving a list of", len(output), "repos in", output_file)
+  print("=== Saving a list of", len(output), "repos in", output_file)
   with open(output_file, 'w') as json_file:
     json.dump(output, json_file, indent=2)
 
 def main():
+  global auth_token
+  auth_token = get_auth_token()
+  global response_type
+  response_type = "application/vnd.github.v3+json"
   print("=== Creating files...")
   create_query_result_output_files()
   print("=== Finding repos...")
