@@ -3,6 +3,7 @@
 # curl -H "Accept: application/vnd.github.v3+json Authorization: token <PAT>" "https://api.github.com/search/repositories?q=language:java+NOT+android+in:description,readme&per_page=2&page=1&sort:stars"
 # curl -H "Accept: application/vnd.github.v3+json Authorization: token <PAT>" "https://api.github.com/search/code?q=filename:pom+extension:xml+repo:full/name&per_page=1&page=1"
 
+import argparse
 import calendar
 import json
 import os
@@ -15,6 +16,20 @@ from datetime import date
 
 # OAuth token for GitHub API calls
 from config import get_auth_token
+
+# Parse range of stars, if provided in the CLI
+def get_stars_query_string(args):
+  min_stars = args.min
+  max_stars = args.max
+  if min_stars > 0 and max_stars > 0:
+    return "stars:" + str(min_stars) + ".." + str(max_stars)
+  elif min_stars > 0 and max_stars == 0:
+    return "stars:>" + str(min_stars)
+  elif min_stars == 0 and max_stars > 0:
+    return "stars:<" + str(max_stars)
+  else:
+    return ""
+
 
 def create_file(filepath):
   if not os.path.exists(os.path.dirname(filepath)):
@@ -35,14 +50,15 @@ def create_query_result_output_files():
   create_file(output_file)
 
 # Get a list of repos with the search/repositories API
-def get_repos():
+def get_repos(args):
   all_search_items = {}
   all_search_items["items"] = []
   global number_of_repos
+  stars_query_string = get_stars_query_string(args)
 
   for i in range(1, 11):
     params = {
-      'q': ' NOT android in:readme,description NOT leetcode in:readme,description language:Java',
+      'q': ' NOT android in:readme,description NOT leetcode in:readme,description language:Java ' + stars_query_string,
       'sort': 'stars',
       'per_page': '100',
       'page': i
@@ -137,7 +153,11 @@ def get_maven_projects():
   with open(output_file, 'w') as json_file:
     json.dump(output, json_file, indent=2)
 
-def main():
+def main(argv):
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--min', type=int, metavar="min-stars", default=0, help='minimum number of stars')
+  parser.add_argument('--max', type=int, metavar="max-stars", default=0, help='maximum number of stars')
+  args = parser.parse_args()
   global auth_token
   auth_token = get_auth_token()
   global response_type
@@ -145,9 +165,9 @@ def main():
   print("=== Creating files...")
   create_query_result_output_files()
   print("=== Finding repos...")
-  get_repos()
+  get_repos(args)
   print("=== Opening", query_results_file, "to find Maven projects...")
   get_maven_projects()
 
 if __name__ == "__main__":
-  main()
+  main(sys.argv[1:])
