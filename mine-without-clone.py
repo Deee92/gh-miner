@@ -58,7 +58,7 @@ def get_repos(args):
 
   for i in range(1, 11):
     params = {
-      'q': ' NOT android in:readme,description NOT leetcode in:readme,description language:Java ' + stars_query_string,
+      'q': 'NOT leetcode in:readme,description language:Java ' + stars_query_string,
       'sort': 'stars',
       'per_page': '100',
       'page': i
@@ -75,7 +75,10 @@ def get_repos(args):
 
     data_from_page = response.json()
     for i in range(len(data_from_page["items"])):
-      all_search_items["items"].append(data_from_page["items"][i])
+      this_repo = data_from_page["items"][i]
+      skip_words = ["android", "sample", "demo", "tutorial", "example"]
+      if not any(skip_word in this_repo["full_name"].lower() for skip_word in skip_words):
+        all_search_items["items"].append(this_repo)
     number_of_repos = len(all_search_items["items"])
   print("=== Saving a list of", number_of_repos, "repos in", query_results_file)
   
@@ -94,6 +97,7 @@ def extract_proprietary_info(single_repo_data):
     "stargazers_count": single_repo_data["stargazers_count"],
     "language": single_repo_data["language"],
     "default_branch": single_repo_data["default_branch"],
+    "updated_at": single_repo_data["updated_at"],
     "size": single_repo_data["size"]
   }
   return single_repo
