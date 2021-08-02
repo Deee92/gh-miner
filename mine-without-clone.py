@@ -17,19 +17,42 @@ from datetime import date
 # OAuth token for GitHub API calls
 from config import get_auth_token
 
-# Parse range of stars, if provided in the CLI
-def get_stars_query_string(args):
+# Parse command-line args
+def parse_cli_args(args):
+  global filename, extension, min_stars, max_stars
+  filename = args.filename
+  extension = args.extension
   min_stars = args.min
   max_stars = args.max
-  if min_stars > 0 and max_stars > 0:
-    return "stars:" + str(min_stars) + ".." + str(max_stars)
-  elif min_stars > 0 and max_stars == 0:
-    return "stars:>" + str(min_stars)
-  elif min_stars == 0 and max_stars > 0:
-    return "stars:<" + str(max_stars)
+
+# Get repository language
+def get_repo_language():
+  if filename == "pom" and extension == "xml":
+    return " language:java"
   else:
     return ""
 
+# Find in README and description
+def find_in_readme_description():
+  if filename == "schema" and extension == "graphql":
+    return " GraphQL in:readme,description"
+  else:
+    return ""
+
+# Get query string for filename and extension
+def get_filename_extension():
+  return "filename:" + filename + " extension:" + extension + " "
+
+# Get query string for range of stars, if provided in the CLI
+def get_stars_query_string():
+  if min_stars > 0 and max_stars > 0:
+    return " stars:" + str(min_stars) + ".." + str(max_stars)
+  elif min_stars > 0 and max_stars == 0:
+    return " stars:>" + str(min_stars)
+  elif min_stars == 0 and max_stars > 0:
+    return " stars:<" + str(max_stars)
+  else:
+    return ""
 
 def create_file(filepath):
   if not os.path.exists(os.path.dirname(filepath)):
@@ -50,15 +73,14 @@ def create_query_result_output_files():
   create_file(output_file)
 
 # Get a list of repos with the search/repositories API
-def get_repos(args):
+def get_list_of_repos():
   all_search_items = {}
   all_search_items["items"] = []
   global number_of_repos
-  stars_query_string = get_stars_query_string(args)
 
   for i in range(1, 11):
     params = {
-      'q': 'NOT leetcode in:readme,description language:Java ' + stars_query_string,
+      'q': 'NOT leetcode in:readme,description' + find_in_readme_description() + get_repo_language() + get_stars_query_string(),
       'sort': 'stars',
       'per_page': '100',
       'page': i
@@ -85,6 +107,7 @@ def get_repos(args):
   with open(query_results_file, 'w') as json_file:
     json.dump(all_search_items, json_file, indent=2)
 
+# Get ready-made info for a repo
 def extract_proprietary_info(single_repo_data):
   single_repo = {
     "current_timestamp": calendar.timegm(time.gmtime()),
@@ -109,10 +132,10 @@ def find_repo_age(created_at, updated_at):
   age = (date_updated_at - date_created_at).days
   return age
 
-# Find pom.xml files with the search/code API
-def find_pom_xml(full_name):
+# Find repos with filename.extension files with the search/code API
+def find_repos_with_filename_extension(full_name):
   params = {
-    'q': 'filename:pom extension:xml repo:' + full_name,
+    'q': get_filename_extension() + 'repo:' + full_name,
     'per_page': 1,
     'page': 1
   }
@@ -129,8 +152,8 @@ def find_pom_xml(full_name):
   print("Total count:", response_data["total_count"])
   return (response_data["total_count"] > 0)
 
-# Find a subset of Maven projects
-def get_maven_projects():
+# Generate a subset of projects that meet all criteria
+def get_projects():
   parent_dir = os.getcwd()
   output = []
   with open(query_results_file, 'r') as json_file:
@@ -142,14 +165,15 @@ def get_maven_projects():
     if ((i + 1) % 30) == 0:
       print("=== Rate limit of 30 requests per minute reached. Resetting...")
       time.sleep(60)
-    print("=== Finding POM files in", single_repo["full_name"], "- repo", (i + 1), "of", number_of_repos)
-    if (find_pom_xml(single_repo["full_name"]) == True):
-      print("=== Found at least one POM in", single_repo["full_name"])
+    print("=== Finding", filename + "." + extension, "files in", single_repo["full_name"], "- repo", (i + 1), "of", number_of_repos)
+    if (find_repos_with_filename_extension(single_repo["full_name"]) == True):
+      print("=== Found at least one", filename + "." + extension, "in", single_repo["full_name"])
       single_repo["age_days"] = find_repo_age(repo_data["items"][i]["created_at"], repo_data["items"][i]["updated_at"])
-      single_repo["has_pom"] = True
+      filename_extension_key = "has_" + filename + "_" + extension
+      single_repo[filename_extension_key] = True
       output.append(single_repo)
     else:
-      print("=== Did not find POM in", single_repo["full_name"])
+      print("=== Did not find", filename + "." + extension, "in", single_repo["full_name"])
     print("=================================")
 
   # Save final outputs to file
@@ -159,9 +183,12 @@ def get_maven_projects():
 
 def main(argv):
   parser = argparse.ArgumentParser()
+  parser.add_argument('-f', '--filename', type=str, metavar="filename", default="pom", help='name of search file')
+  parser.add_argument('-e', '--extension', type=str, metavar="extension", default="xml", help='extension of search file')
   parser.add_argument('--min', type=int, metavar="min-stars", default=0, help='minimum number of stars')
   parser.add_argument('--max', type=int, metavar="max-stars", default=0, help='maximum number of stars')
   args = parser.parse_args()
+  parse_cli_args(args)
   global auth_token
   auth_token = get_auth_token()
   global response_type
@@ -169,9 +196,9 @@ def main(argv):
   print("=== Creating files...")
   create_query_result_output_files()
   print("=== Finding repos...")
-  get_repos(args)
-  print("=== Opening", query_results_file, "to find Maven projects...")
-  get_maven_projects()
+  get_list_of_repos()
+  print("=== Opening", query_results_file, "to find projects with at least one", filename + "." + extension, "file...")
+  get_projects()
 
 if __name__ == "__main__":
   main(sys.argv[1:])
