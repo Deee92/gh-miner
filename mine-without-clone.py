@@ -34,7 +34,7 @@ def get_repo_language():
 
 # Find in README and description
 def find_in_readme_description():
-  if filename == "graphql" and extension == "schema":
+  if filename == "schema" and extension == "graphql":
     return " GraphQL in:readme,description"
   else:
     return ""
