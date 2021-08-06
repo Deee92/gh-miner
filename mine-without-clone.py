@@ -48,9 +48,9 @@ def get_stars_query_string():
   if min_stars > 0 and max_stars > 0:
     return " stars:" + str(min_stars) + ".." + str(max_stars)
   elif min_stars > 0 and max_stars == 0:
-    return " stars:>" + str(min_stars)
+    return " stars:>=" + str(min_stars)
   elif min_stars == 0 and max_stars > 0:
-    return " stars:<" + str(max_stars)
+    return " stars:<=" + str(max_stars)
   else:
     return ""
 
